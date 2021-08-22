@@ -21,7 +21,7 @@ product_name = 'ABI-L2-CMIPF'
 yyyymmddhhmn = '202102181800'
 
 # Desired extent
-extent = [-64.0, -36.0, -40.0, -15.0] # Min lon, Max lon, Min lat, Max lat
+extent = [-82.0, -5.0, -65.0, 16.0] # Min lon, Max lon, Min lat, Max lat
 
 #-----------------------------------------------------------------------------------------------------------
 # Download the necessary bands from AWS
@@ -57,8 +57,15 @@ ury, urx = geo2grid(extent[3], extent[2], file_ch05)
 data_ch05 = file_ch05.variables['CMI'][ury:lly, llx:urx][::2 ,::2] 
 #-----------------------------------------------------------------------------------------------------------
 # Make the arrays equal size
-data_ch02 = data_ch02[0:data_ch13.shape[0], 0:data_ch13.shape[1]]
-data_ch05 = data_ch05[0:data_ch13.shape[0], 0:data_ch13.shape[1]] 
+cordX = np.shape(data_ch02)[0], np.shape(data_ch05)[0], np.shape(data_ch13)[0]
+cordY = np.shape(data_ch02)[1], np.shape(data_ch05)[1], np.shape(data_ch13)[1]
+
+minvalX = np.array(cordX).min()
+minvalY = np.array(cordY).min()
+
+data_ch02 = data_ch02[0:minvalX, 0:minvalY]
+data_ch05 = data_ch05[0:minvalX, 0:minvalY]
+data_ch13 = data_ch13[0:minvalX, 0:minvalY]
 #-----------------------------------------------------------------------------------------------------------
 # Compute data-extent in GOES projection-coordinates
 img_extent = convertExtent2GOESProjection(extent)              
