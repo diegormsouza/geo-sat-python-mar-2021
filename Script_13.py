@@ -21,7 +21,7 @@ product_name = 'ABI-L2-CMIPF'
 yyyymmddhhmn = '202102181800'
 
 # Desired extent
-extent = [-82.0, -5.0, -65.0, 16.0] # Min lon, Max lon, Min lat, Max lat
+extent = [-64.0, -36.0, -40.0, -15.0] # Min lon, Max lon, Min lat, Max lat
 
 #-----------------------------------------------------------------------------------------------------------
 # Download the necessary bands from AWS
