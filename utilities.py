@@ -8,9 +8,13 @@ import boto3                             # Amazon Web Services (AWS) SDK for Pyt
 from botocore import UNSIGNED            # boto3 config
 from botocore.config import Config       # boto3 config
 import math                              # Mathematical functions
+import time as t                         # Time access and conversions
 from datetime import datetime            # Basic Dates and time types
 from osgeo import osr                    # Python bindings for GDAL
 from osgeo import gdal                   # Python bindings for GDAL
+import warnings
+warnings.filterwarnings("ignore")
+gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 #from netCDF4 import Dataset          # Read / Write NetCDF4 files
 #import matplotlib.pyplot as plt      # Plotting library
@@ -311,4 +315,159 @@ def reproject(file_name, ncfile, array, extent, undef):
 
     # Write the reprojected file on disk
     gdal.Warp(file_name, raw, **kwargs)
+
+#---------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------
+def exportImage(image,path):
+    driver = gdal.GetDriverByName('netCDF')
+    return driver.CreateCopy(path,image,0)
+#---------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------
+def getGeoT(extent, nlines, ncols):
+    # Compute resolution based on data dimension
+    resx = (extent[2] - extent[0]) / ncols
+    resy = (extent[3] - extent[1]) / nlines
+    return [extent[0], resx, 0, extent[3] , 0, -resy]
+#---------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------
+def getScaleOffset(path, variable):
+    nc = Dataset(path, mode='r')
+
+    if (variable == "BCM") or (variable == "Phase") or (variable == "Smoke") or (variable == "Dust") or (variable == "Mask") or (variable == "Power"):
+        scale  = 1
+        offset = 0
+    else:
+        scale = nc.variables[variable].scale_factor
+        offset = nc.variables[variable].add_offset
+    nc.close()
+
+    return scale, offset
+#---------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------
+def remap(path, variable, extent, resolution):
+
+    # Read the image
+    file = Dataset(path)
+
+    # Read the semi major axis
+    a = file.variables['goes_imager_projection'].semi_major_axis
+
+    # Read the semi minor axis
+    b = file.variables['goes_imager_projection'].semi_minor_axis
+
+    # Calculate the image extent
+    h = file.variables['goes_imager_projection'].perspective_point_height
+    x1 = file.variables['x_image_bounds'][0] * h
+    x2 = file.variables['x_image_bounds'][1] * h
+    y1 = file.variables['y_image_bounds'][1] * h
+    y2 = file.variables['y_image_bounds'][0] * h
+
+    # Read the central longitude
+    longitude = file.variables['goes_imager_projection'].longitude_of_projection_origin
+
+    # Default scale
+    scale = 1
+
+    # Default offset
+    offset = 0
+
+    # GOES Extent (satellite projection) [llx, lly, urx, ury]
+    GOES_EXTENT = [x1, y1, x2, y2]
+
+    # Setup NetCDF driver
+    gdal.SetConfigOption('GDAL_NETCDF_BOTTOMUP', 'NO')
+
+    if not (variable == "DQF"):
+        # Read scale/offset from file
+        scale, offset = getScaleOffset(path, variable)
+
+    connectionInfo = 'HDF5:\"' + path + '\"://' + variable
+
+    #print(connectionInfo)
+
+    # Read the datasat
+    raw = gdal.Open(connectionInfo)
+
+    # Define KM_PER_DEGREE
+    KM_PER_DEGREE = 111.32
+
+    # GOES Spatial Reference System
+    sourcePrj = osr.SpatialReference()
+    sourcePrj.ImportFromProj4('+proj=geos +h=' + str(h) + ' ' + '+a=' + str(a) + ' ' + '+b=' + str(b) + ' ' + '+lon_0=' + str(longitude) + ' ' + '+sweep=x')
+
+    # Lat/lon WSG84 Spatial Reference System
+    targetPrj = osr.SpatialReference()
+    targetPrj.ImportFromProj4('+proj=latlong +datum=WGS84')
+
+    # Setup projection and geo-transformation
+    raw.SetProjection(sourcePrj.ExportToWkt())
+    raw.SetGeoTransform(getGeoT(GOES_EXTENT, raw.RasterYSize, raw.RasterXSize))
+
+    # Compute grid dimension
+    sizex = int(((extent[2] - extent[0]) * KM_PER_DEGREE) / resolution)
+    sizey = int(((extent[3] - extent[1]) * KM_PER_DEGREE) / resolution)
+
+    # Get memory driver
+    memDriver = gdal.GetDriverByName('MEM')
+
+    # Create grid
+    grid = memDriver.Create('grid', sizex, sizey, 1, gdal.GDT_Float32)
+
+    # Setup projection and geo-transformation
+    grid.SetProjection(targetPrj.ExportToWkt())
+    grid.SetGeoTransform(getGeoT(extent, grid.RasterYSize, grid.RasterXSize))
+
+    # Perform the projection/resampling
+    print ('Remapping...')#, path)
+
+    start = t.time()
+
+    gdal.ReprojectImage(raw, grid, sourcePrj.ExportToWkt(), targetPrj.ExportToWkt(), gdal.GRA_NearestNeighbour, options=['NUM_THREADS=ALL_CPUS'])
+
+    print ('Remap finished! Time:', round((t.time() - start),2), 'seconds')
+
+    # Read grid data
+    array = grid.ReadAsArray()
+
+    # Mask fill values (i.e. invalid values)
+    np.ma.masked_where(array, array == -1, False)
+
+    # Read as uint16
+    array = array.astype(np.uint16)
+
+    # Apply scale and offset
+    array = array * scale + offset
+
+    # Get the raster
+    grid.GetRasterBand(1).WriteArray(array)
+
+    # GENERATE A NEW NETCDF FILE =================================
+    connectionInfo = 'NETCDF:\"' + path + '\"://' + variable
+    # Read the datasat
+    img = gdal.Open(connectionInfo)
+    metadata = img.GetMetadata()
+    undef = float(metadata.get(variable + '#_FillValue'))
+    # Define the parameters of the output file
+    options = gdal.WarpOptions(format = 'netCDF',
+    srcSRS = sourcePrj,
+    dstSRS = targetPrj,
+    outputBounds = (extent[0], extent[3], extent[2], extent[1]),
+    outputBoundsSRS = targetPrj,
+    outputType = gdal.GDT_Float32,
+    srcNodata = undef,
+    dstNodata = 'nan',
+    xRes = resolution/100,
+    yRes = resolution/100,
+    resampleAlg = gdal.GRA_NearestNeighbour)
+
+    # Write the reprojected file on disk
+    gdal.Warp(f'{path[:-3]}_ret.nc', raw, options=options)
+    #==============================================================
+
+	  # Close file
+    raw = None; img=None
+
+    return grid
+#---------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------
 
