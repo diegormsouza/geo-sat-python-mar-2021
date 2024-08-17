@@ -1,6 +1,7 @@
 # Training: Python and GOES-R Imagery: Script 8 - Functions for download data from AWS
 #-----------------------------------------------------------------------------------------------------------
 # Required modules
+from netCDF4 import Dataset              # Read / Write NetCDF4 files
 import os                                # Miscellaneous operating system interfaces
 import numpy as np                       # Import the Numpy package
 import colorsys                          # To make convertion of colormaps
