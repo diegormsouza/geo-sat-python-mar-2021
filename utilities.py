@@ -1,4 +1,4 @@
-# Training: Python and GOES-R Imagery: Script 8 - Functions for download data from AWS
+# Training: Python and GOES-R Imagery: Function with general functions
 #-----------------------------------------------------------------------------------------------------------
 # Required modules
 from netCDF4 import Dataset              # Read / Write NetCDF4 files
@@ -16,12 +16,6 @@ from osgeo import gdal                   # Python bindings for GDAL
 import warnings
 warnings.filterwarnings("ignore")
 gdal.PushErrorHandler('CPLQuietErrorHandler')
-
-#from netCDF4 import Dataset          # Read / Write NetCDF4 files
-#import matplotlib.pyplot as plt      # Plotting library
-#import cartopy, cartopy.crs as ccrs  # Plot maps
-##import sys
-#from datetime import timedelta, date, datetime   # Manipulate dates
 
 #-----------------------------------------------------------------------------------------------------------
 def loadCPT(path):
@@ -317,20 +311,17 @@ def reproject(file_name, ncfile, array, extent, undef):
     # Write the reprojected file on disk
     gdal.Warp(file_name, raw, **kwargs)
 
-#---------------------------------------------------------------------------------------------
-#---------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------
 def exportImage(image,path):
     driver = gdal.GetDriverByName('netCDF')
     return driver.CreateCopy(path,image,0)
-#---------------------------------------------------------------------------------------------
-#---------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------
 def getGeoT(extent, nlines, ncols):
     # Compute resolution based on data dimension
     resx = (extent[2] - extent[0]) / ncols
     resy = (extent[3] - extent[1]) / nlines
     return [extent[0], resx, 0, extent[3] , 0, -resy]
-#---------------------------------------------------------------------------------------------
-#---------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------
 def getScaleOffset(path, variable):
     nc = Dataset(path, mode='r')
 
@@ -343,8 +334,7 @@ def getScaleOffset(path, variable):
     nc.close()
 
     return scale, offset
-#---------------------------------------------------------------------------------------------
-#---------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------
 def remap(path, variable, extent, resolution):
 
     # Read the image
@@ -465,7 +455,7 @@ def remap(path, variable, extent, resolution):
     gdal.Warp(f'{path[:-3]}_ret.nc', raw, options=options)
     #==============================================================
 
-	  # Close file
+    # Close file
     raw = None; img=None
 
     return grid
